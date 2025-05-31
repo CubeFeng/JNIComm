@@ -1,0 +1,133 @@
+#include <jni.h>
+#include "native-log.h"
+#include <vector>
+#include <mutex>
+#include <condition_variable>
+
+// Write C++ code here.
+//
+// Do not forget to dynamically load the C++ library into your application.
+//
+// For instance,
+//
+// In MainActivity.java:
+//    static {
+//       System.loadLibrary("jnilibrary");
+//    }
+//
+// Or, in MainActivity.kt:
+//    companion object {
+//      init {
+//         System.loadLibrary("jnilibrary")
+//      }
+//    }
+
+
+static JavaVM *g_vm = nullptr;
+static jclass g_clazz = nullptr;
+static jmethodID g_method = nullptr;
+
+// 线程同步
+static std::mutex g_mutex;
+static std::condition_variable g_cv;
+//static bool g_dataReceived = false;
+static std::vector<unsigned char> g_receivedData;
+
+
+#define CLASS_NATIVE_API "com/example/jnilibrary/NativeApi"
+#define RECV_METHOD "onNativeDataReceived"
+
+extern "C"
+void sendDataToJava(JNIEnv *env, std::string data) {
+    if (nullptr == env) {
+        g_vm->AttachCurrentThread(&env, nullptr);
+        LOGE("env is nullptr, attached now");
+    }
+
+    // 十六进制字符串转字节数组
+    std::vector<unsigned char> byteData;
+    // 预分配内存，避免多次内存重新分配
+    byteData.reserve(data.length() / 2);
+
+    for (size_t i = 0; i < data.length(); i += 2) {
+        std::string byteString = data.substr(i, 2);
+        unsigned char byte = static_cast<unsigned char>(std::stoul(byteString, nullptr, 16));
+        byteData.push_back(byte);
+    }
+
+    // 创建 jbyteArray，长度为 data 的长度
+    jbyteArray byteArray = env->NewByteArray(data.length());
+    if (byteArray == nullptr) {
+        LOGE("Failed to create jbyteArray");
+        return;
+    }
+
+    env->SetByteArrayRegion(byteArray, 0, byteData.size(), reinterpret_cast<const jbyte*>(byteData.data()));
+    // 调用 Java 静态方法，传入 jbyteArray
+    env->CallStaticVoidMethod(g_clazz, g_method, byteArray);
+
+    // 删除局部引用，避免内存泄漏
+    env->DeleteLocalRef(byteArray);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_example_jnilibrary_NativeApi_initNative(JNIEnv *env, jclass clazz) {
+
+    env->GetJavaVM(&g_vm);
+
+    g_clazz = (jclass)env->FindClass(CLASS_NATIVE_API);
+    if (nullptr == clazz) {
+        LOGE("Class not found");
+        return;
+    }
+
+    g_method = env->GetStaticMethodID(g_clazz, RECV_METHOD, "([B)V");
+    if (nullptr == g_method) {
+        LOGE("recv method not found");
+        return;
+    }
+}
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_com_example_jnilibrary_NativeApi_getAddress(JNIEnv *env, jclass clazz) {
+    std::string cmd = "3F232300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+
+    sendDataToJava(env, cmd);
+
+    // 等待 Java 层返回响应
+    {
+        std::unique_lock<std::mutex> lock(g_mutex);
+        g_cv.wait(lock, []{ return !g_receivedData.empty(); });
+//        g_dataReceived = false; // 重置标志
+    }
+
+    LOGD("[C++] response: %s", g_receivedData.data());
+
+    if (g_receivedData.empty() || g_receivedData.back() != '\0') {
+        g_receivedData.push_back('\0');  // 添加字符串结束符
+    }
+
+    return env->NewStringUTF(reinterpret_cast<const char*>(g_receivedData.data()));
+}
+
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_example_jnilibrary_NativeApi_sendDataToNative(JNIEnv *env, jclass clazz, jbyteArray data) {
+    jbyte* bytes = env->GetByteArrayElements(data, nullptr);
+    jint length = env->GetArrayLength(data);
+    LOGD("[C++] Received data: %.*s", length, reinterpret_cast<const char*>(bytes));
+
+    // 保存接收到的数据
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_receivedData.insert(g_receivedData.end(), bytes, bytes + length);
+//        g_dataReceived = true;
+    }
+    // 唤醒等待线程
+    g_cv.notify_one();
+
+    env->ReleaseByteArrayElements(data, bytes, 0);
+}
