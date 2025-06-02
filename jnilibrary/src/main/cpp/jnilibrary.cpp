@@ -90,8 +90,8 @@ Java_com_example_jnilibrary_NativeApi_initNative(JNIEnv *env, jclass clazz) {
 }
 
 extern "C"
-JNIEXPORT jstring JNICALL
-Java_com_example_jnilibrary_NativeApi_getAddress(JNIEnv *env, jclass clazz) {
+JNIEXPORT jbyteArray JNICALL
+Java_com_example_jnilibrary_NativeApi_getFeatures(JNIEnv *env, jclass clazz) {
     std::string cmd = "3F232300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
 
     sendDataToJava(env, cmd);
@@ -105,11 +105,16 @@ Java_com_example_jnilibrary_NativeApi_getAddress(JNIEnv *env, jclass clazz) {
 
     LOGD("[C++] response: %s", g_receivedData.data());
 
-    if (g_receivedData.empty() || g_receivedData.back() != '\0') {
-        g_receivedData.push_back('\0');  // 添加字符串结束符
+    // 创建 jbyteArray
+    jbyteArray byteArray = env->NewByteArray(g_receivedData.size());
+    if (byteArray == nullptr) {
+        LOGE("Failed to create jbyteArray");
+        return nullptr;
     }
 
-    return env->NewStringUTF(reinterpret_cast<const char*>(g_receivedData.data()));
+    env->SetByteArrayRegion(byteArray, 0, g_receivedData.size(), reinterpret_cast<const jbyte*>(g_receivedData.data()));
+
+    return byteArray;
 }
 
 

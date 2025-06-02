@@ -28,5 +28,5 @@ public class NativeApi {
 
     public static native void sendDataToNative(byte[] data);
 
-    public static native String getAddress();
+    public static native byte[] getFeatures();
 }

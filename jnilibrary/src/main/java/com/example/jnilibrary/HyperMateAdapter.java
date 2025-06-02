@@ -185,8 +185,8 @@ public class HyperMateAdapter {
                         @Override
                         public void run() {
                             Log.d(TAG, "call getAddress()");
-                            String address = NativeApi.getAddress();
-                            Log.d(TAG, "getAddress() result: " + address);
+                            byte[] result = NativeApi.getFeatures();
+                            Log.d(TAG, "getFeatures() : " + HexString.byteArrayToHex(result));
                         }
                     }, 1000);
                 },
