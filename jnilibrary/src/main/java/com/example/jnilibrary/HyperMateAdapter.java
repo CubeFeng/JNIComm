@@ -184,9 +184,9 @@ public class HyperMateAdapter {
                     timer.schedule(new TimerTask() {
                         @Override
                         public void run() {
-                            Log.d(TAG, "call getAddress()");
-                            String address = NativeApi.getAddress();
-                            Log.d(TAG, "getAddress() result: " + address);
+                            Log.d(TAG, "call getFeatures()");
+                            byte[] result = NativeApi.getFeatures();
+                            Log.d(TAG, "getFeatures() : " + HexString.byteArrayToHex(result));
                         }
                     }, 1000);
                 },
@@ -210,14 +210,16 @@ public class HyperMateAdapter {
                 "notifyCharacteristic",
                 data -> {
                     Log.d(TAG, "notify onSuccessCallback: " + HexString.byteArrayToHex(data.getValue()));
-                    boolean finish = ProtocolDecoder.packetCompletionCheck(data.getValue());
-                    if (!finish) {
-                        return;
-                    }
-                    Log.d(TAG, ">>> notify 接收完成：" + ProtocolDecoder.decode());
-                    synchronized (mNotifyLock) {
-                        mNotifyLock.notifyAll();
-                    }
+                    NativeApi.sendDataToNative(data.getValue());
+
+//                    boolean finish = ProtocolDecoder.packetCompletionCheck(data.getValue());
+//                    if (!finish) {
+//                        return;
+//                    }
+//                    Log.d(TAG, ">>> notify 接收完成：" + ProtocolDecoder.decode());
+//                    synchronized (mNotifyLock) {
+//                        mNotifyLock.notifyAll();
+//                    }
                 },
                 error -> {
                     Log.d(TAG, "notifyCharacteristic error: " + error);
@@ -271,8 +273,8 @@ public class HyperMateAdapter {
             } else {
                 Log.d(TAG, ">>> 命令写入成功");
             }
-
-            return waitForResponse();
+            return null;
+//            return waitForResponse();
         } catch (Exception e) {
             Log.e(TAG, "writeAndWaitForResponse 过程中出现异常", e);
             return null;

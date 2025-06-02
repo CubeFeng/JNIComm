@@ -1,5 +1,6 @@
 #include <jni.h>
 #include "native-log.h"
+#include "ProtocolDecoder.h"
 #include <vector>
 #include <mutex>
 #include <condition_variable>
@@ -30,12 +31,19 @@ static jmethodID g_method = nullptr;
 // 线程同步
 static std::mutex g_mutex;
 static std::condition_variable g_cv;
-//static bool g_dataReceived = false;
-static std::vector<unsigned char> g_receivedData;
+static bool g_allDataReceived = false;
 
 
 #define CLASS_NATIVE_API "com/example/jnilibrary/NativeApi"
 #define RECV_METHOD "onNativeDataReceived"
+
+
+MessageResponse waitForResponse() {
+    std::unique_lock<std::mutex> lock(g_mutex);
+    g_cv.wait(lock, [] { return g_allDataReceived; });
+    return ProtocolDecoder::decode();
+}
+
 
 extern "C"
 void sendDataToJava(JNIEnv *env, std::string data) {
@@ -62,7 +70,8 @@ void sendDataToJava(JNIEnv *env, std::string data) {
         return;
     }
 
-    env->SetByteArrayRegion(byteArray, 0, byteData.size(), reinterpret_cast<const jbyte*>(byteData.data()));
+    env->SetByteArrayRegion(byteArray, 0, byteData.size(),
+                            reinterpret_cast<const jbyte *>(byteData.data()));
     // 调用 Java 静态方法，传入 jbyteArray
     env->CallStaticVoidMethod(g_clazz, g_method, byteArray);
 
@@ -76,7 +85,7 @@ Java_com_example_jnilibrary_NativeApi_initNative(JNIEnv *env, jclass clazz) {
 
     env->GetJavaVM(&g_vm);
 
-    g_clazz = (jclass)env->FindClass(CLASS_NATIVE_API);
+    g_clazz = (jclass) env->FindClass(CLASS_NATIVE_API);
     if (nullptr == clazz) {
         LOGE("Class not found");
         return;
@@ -90,42 +99,46 @@ Java_com_example_jnilibrary_NativeApi_initNative(JNIEnv *env, jclass clazz) {
 }
 
 extern "C"
-JNIEXPORT jstring JNICALL
-Java_com_example_jnilibrary_NativeApi_getAddress(JNIEnv *env, jclass clazz) {
+JNIEXPORT jbyteArray JNICALL
+Java_com_example_jnilibrary_NativeApi_getFeatures(JNIEnv *env, jclass clazz) {
     std::string cmd = "3F232300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
 
     sendDataToJava(env, cmd);
 
     // 等待 Java 层返回响应
-    {
-        std::unique_lock<std::mutex> lock(g_mutex);
-        g_cv.wait(lock, []{ return !g_receivedData.empty(); });
-//        g_dataReceived = false; // 重置标志
+    MessageResponse response = waitForResponse();
+
+    LOG_HEX("[C++] Response", response.data.data(), response.data.size());
+    // 转换为 jstring
+    std::vector<unsigned char> receivedData = response.data;
+
+    // 创建 jbyteArray
+    jbyteArray byteArray = env->NewByteArray(receivedData.size());
+    if (byteArray == nullptr) {
+        LOGE("Failed to create jbyteArray");
+        return nullptr;
     }
 
-    LOGD("[C++] response: %s", g_receivedData.data());
+    env->SetByteArrayRegion(byteArray, 0, receivedData.size(),
+                            reinterpret_cast<const jbyte *>(receivedData.data()));
 
-    if (g_receivedData.empty() || g_receivedData.back() != '\0') {
-        g_receivedData.push_back('\0');  // 添加字符串结束符
-    }
-
-    return env->NewStringUTF(reinterpret_cast<const char*>(g_receivedData.data()));
+    return byteArray;
 }
 
 
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_example_jnilibrary_NativeApi_sendDataToNative(JNIEnv *env, jclass clazz, jbyteArray data) {
-    jbyte* bytes = env->GetByteArrayElements(data, nullptr);
+    jbyte *bytes = env->GetByteArrayElements(data, nullptr);
     jint length = env->GetArrayLength(data);
-    LOGD("[C++] Received data: %.*s", length, reinterpret_cast<const char*>(bytes));
+    LOG_HEX("[C++] Received", reinterpret_cast<const uint8_t *>(bytes), length);
 
-    // 保存接收到的数据
-    {
-        std::lock_guard<std::mutex> lock(g_mutex);
-        g_receivedData.insert(g_receivedData.end(), bytes, bytes + length);
-//        g_dataReceived = true;
+    g_allDataReceived = ProtocolDecoder::packetCompletionCheck(
+            reinterpret_cast<const uint8_t *>(bytes), length);
+    if (!g_allDataReceived) {
+        return;
     }
+    LOGD("[C++] 接收完成");
     // 唤醒等待线程
     g_cv.notify_one();
 

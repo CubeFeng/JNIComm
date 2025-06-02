@@ -18,9 +18,7 @@ public class NativeApi {
      */
     public static void onNativeDataReceived(byte[] data) {
         Log.i(TAG, "[Java] recvNativeData: " + HexString.byteArrayToHex(data));
-        MessageResponse result = HyperMateAdapter.getInstance().writeAndWaitForResponse(data);
-        // 直接转发到 Native
-        NativeApi.sendDataToNative(result.getData());
+        HyperMateAdapter.getInstance().writeAndWaitForResponse(data);
     }
 
 
@@ -28,5 +26,5 @@ public class NativeApi {
 
     public static native void sendDataToNative(byte[] data);
 
-    public static native String getAddress();
+    public static native byte[] getFeatures();
 }

@@ -5,6 +5,7 @@ plugins {
 android {
     namespace 'com.example.jnilibrary'
     compileSdk 34
+    ndkVersion '20.1.5948944'
 
     defaultConfig {
         minSdk 24
