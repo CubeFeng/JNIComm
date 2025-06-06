@@ -1,5 +1,7 @@
 #include <jni.h>
-#include "native-log.h"
+#include "jni_log.h"
+#include "hex_utils.h"
+#include "common_jni.h"
 #include <vector>
 #include <mutex>
 #include <condition_variable>
@@ -30,7 +32,6 @@ static jmethodID g_method = nullptr;
 // 线程同步
 static std::mutex g_mutex;
 static std::condition_variable g_cv;
-//static bool g_dataReceived = false;
 static std::vector<unsigned char> g_receivedData;
 
 
@@ -39,24 +40,46 @@ static std::vector<unsigned char> g_receivedData;
 
 extern "C"
 void sendDataToJava(JNIEnv *env, std::string data) {
-    if (nullptr == env) {
-        g_vm->AttachCurrentThread(&env, nullptr);
-        LOGE("env is nullptr, attached now");
+    if (g_vm == nullptr) {
+        LOGE("JavaVM is nullptr, cannot attach thread");
+        return;
+    }
+
+    // 检查类和方法是否已经初始化
+    if (g_clazz == nullptr || g_method == nullptr) {
+        LOGE("Class or method ID is nullptr, call initNative first");
+        return;
+    }
+
+
+    // 如果 env 为空，尝试附加当前线程
+    if (env == nullptr) {
+        if (g_vm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+            LOGE("Failed to attach current thread");
+            return;
+        }
+        // 确保在函数结束时分离线程
+        struct ThreadDetacher {
+            JavaVM* vm;
+            ~ThreadDetacher() {
+                if (vm) {
+                    vm->DetachCurrentThread();
+                }
+            }
+        } detacher{g_vm};
     }
 
     // 十六进制字符串转字节数组
     std::vector<unsigned char> byteData;
-    // 预分配内存，避免多次内存重新分配
-    byteData.reserve(data.length() / 2);
-
-    for (size_t i = 0; i < data.length(); i += 2) {
-        std::string byteString = data.substr(i, 2);
-        unsigned char byte = static_cast<unsigned char>(std::stoul(byteString, nullptr, 16));
-        byteData.push_back(byte);
+    try {
+        byteData = hexStringToByteArray(data);
+    } catch (const std::exception& e) {
+        LOGE("%s", e.what());
+        return;
     }
 
     // 创建 jbyteArray，长度为 data 的长度
-    jbyteArray byteArray = env->NewByteArray(data.length());
+    jbyteArray byteArray = env->NewByteArray(byteData.size());
     if (byteArray == nullptr) {
         LOGE("Failed to create jbyteArray");
         return;
@@ -65,6 +88,9 @@ void sendDataToJava(JNIEnv *env, std::string data) {
     env->SetByteArrayRegion(byteArray, 0, byteData.size(), reinterpret_cast<const jbyte*>(byteData.data()));
     // 调用 Java 静态方法，传入 jbyteArray
     env->CallStaticVoidMethod(g_clazz, g_method, byteArray);
+
+    // 检查并处理 Java 异常
+    checkAndClearJavaException(env);
 
     // 删除局部引用，避免内存泄漏
     env->DeleteLocalRef(byteArray);
@@ -100,7 +126,6 @@ Java_com_example_jnilibrary_NativeApi_getFeatures(JNIEnv *env, jclass clazz) {
     {
         std::unique_lock<std::mutex> lock(g_mutex);
         g_cv.wait(lock, []{ return !g_receivedData.empty(); });
-//        g_dataReceived = false; // 重置标志
     }
 
     LOGD("[C++] response: %s", g_receivedData.data());
@@ -129,7 +154,6 @@ Java_com_example_jnilibrary_NativeApi_sendDataToNative(JNIEnv *env, jclass clazz
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         g_receivedData.insert(g_receivedData.end(), bytes, bytes + length);
-//        g_dataReceived = true;
     }
     // 唤醒等待线程
     g_cv.notify_one();

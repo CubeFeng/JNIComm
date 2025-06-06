@@ -172,11 +172,6 @@ public class HyperMateAdapter {
                 data -> {
                     Log.d(TAG, "discoverServices onSuccessCallback: " + data);
                     notifyCharacteristic(deviceAddress, SERVICE_UUID, NOTIFY_UUID);
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
 
                     // 延迟调用，确保 notify 已经打开
                     // 临时措施，并不保险
@@ -184,7 +179,7 @@ public class HyperMateAdapter {
                     timer.schedule(new TimerTask() {
                         @Override
                         public void run() {
-                            Log.d(TAG, "call getAddress()");
+                            Log.d(TAG, "call getFeature()");
                             byte[] result = NativeApi.getFeatures();
                             Log.d(TAG, "getFeatures() : " + HexString.byteArrayToHex(result));
                         }
