@@ -1,6 +1,7 @@
 #include <jni.h>
 #include "native-log.h"
 #include "ProtocolDecoder.h"
+#include "ProtocolEncoder.h"
 #include <vector>
 #include <mutex>
 #include <condition_variable>
@@ -46,32 +47,21 @@ MessageResponse waitForResponse() {
 
 
 extern "C"
-void sendDataToJava(JNIEnv *env, std::string data) {
+void sendDataToJava(JNIEnv *env, std::vector<unsigned char> data) {
     if (nullptr == env) {
         g_vm->AttachCurrentThread(&env, nullptr);
         LOGE("env is nullptr, attached now");
     }
 
-    // 十六进制字符串转字节数组
-    std::vector<unsigned char> byteData;
-    // 预分配内存，避免多次内存重新分配
-    byteData.reserve(data.length() / 2);
-
-    for (size_t i = 0; i < data.length(); i += 2) {
-        std::string byteString = data.substr(i, 2);
-        unsigned char byte = static_cast<unsigned char>(std::stoul(byteString, nullptr, 16));
-        byteData.push_back(byte);
-    }
-
     // 创建 jbyteArray，长度为 data 的长度
-    jbyteArray byteArray = env->NewByteArray(data.length());
+    jbyteArray byteArray = env->NewByteArray(data.size());
     if (byteArray == nullptr) {
         LOGE("Failed to create jbyteArray");
         return;
     }
 
-    env->SetByteArrayRegion(byteArray, 0, byteData.size(),
-                            reinterpret_cast<const jbyte *>(byteData.data()));
+    env->SetByteArrayRegion(byteArray, 0, data.size(),
+                            reinterpret_cast<const jbyte *>(data.data()));
     // 调用 Java 静态方法，传入 jbyteArray
     env->CallStaticVoidMethod(g_clazz, g_method, byteArray);
 
@@ -101,8 +91,9 @@ Java_com_example_jnilibrary_NativeApi_initNative(JNIEnv *env, jclass clazz) {
 extern "C"
 JNIEXPORT jbyteArray JNICALL
 Java_com_example_jnilibrary_NativeApi_getFeatures(JNIEnv *env, jclass clazz) {
-    std::string cmd = "3F232300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
 
+    std::vector<unsigned char> emptyUCharVector;
+    std::vector<uint8_t> cmd = ProtocolEncoder::encodeProtocol(0, emptyUCharVector);
     sendDataToJava(env, cmd);
 
     // 等待 Java 层返回响应

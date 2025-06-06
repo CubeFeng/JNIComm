@@ -17,11 +17,6 @@ int ProtocolEncoder::calculateEncodeBufferSize(const std::vector<uint8_t>& data)
 }
 
 std::vector<uint8_t> ProtocolEncoder::encode(int messageType, const std::vector<uint8_t>& data) {
-    if (data.empty()) {
-        logError("encode: 输入数据不能为 null");
-        return {};
-    }
-
     int bufferSize = calculateEncodeBufferSize(data);
     std::vector<uint8_t> buffer(bufferSize);
 
@@ -39,11 +34,6 @@ std::vector<uint8_t> ProtocolEncoder::encode(int messageType, const std::vector<
 }
 
 std::vector<uint8_t> ProtocolEncoder::encodeProtocol(int messageType, const std::vector<uint8_t>& data) {
-    if (data.empty()) {
-        logError("encodeProtocol: 输入数据不能为 null");
-        return {};
-    }
-
     std::vector<uint8_t> pbBytes = encode(messageType, data);
 
     std::vector<std::vector<uint8_t>> packets = splitDataWithHeader(pbBytes);
