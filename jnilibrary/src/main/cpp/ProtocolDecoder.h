@@ -8,7 +8,7 @@ public:
     int messageType;
     std::vector<uint8_t> data;
 
-    MessageResponse(int type, const std::vector<uint8_t>& d) : messageType(type), data(d) {}
+    MessageResponse(int type, const std::vector<uint8_t> &d) : messageType(type), data(d) {}
 };
 
 class ProtocolConstants {
@@ -19,20 +19,42 @@ public:
 
 class ProtocolDecoder {
 private:
-    static long msgDataLen;
-    static int messageType;
-    static std::vector<uint8_t> buffer;
+    long msgDataLen;
+    int messageType;
+    std::vector<uint8_t> buffer;
 
-    static void clear();
+    // 私有构造函数、析构函数、拷贝构造函数和赋值运算符
+    ProtocolDecoder() {
+        msgDataLen = 0L;
+        messageType = 0;
+    }
+
+    ~ProtocolDecoder() = default;
+
+    ProtocolDecoder(const ProtocolDecoder &) = delete;
+
+    ProtocolDecoder &operator=(const ProtocolDecoder &) = delete;
+
+    void clear();
+
+    bool isHeaderChunk(const std::vector<uint8_t> &chunk);
+
+    int decode16BE(const std::vector<uint8_t> &src, int offset);
+
+    long decode32BE(const std::vector<uint8_t> &src, int offset);
 
 public:
-    ProtocolDecoder() = delete;
+    // 获取单例实例的静态方法
+    static ProtocolDecoder &getInstance() {
+        static ProtocolDecoder instance;
+        return instance;
+    }
 
-    static bool isHeaderChunk(const std::vector<uint8_t>& chunk);
-    static int decode16BE(const std::vector<uint8_t>& src, int offset);
-    static long decode32BE(const std::vector<uint8_t>& src, int offset);
-    static bool packetCompletionCheck(const uint8_t* value, size_t length);
-    static MessageResponse decode();
+    bool packetCompletionCheck(const uint8_t *value, size_t length);
+
+    MessageResponse decode();
+
+    std::vector<uint8_t> getRawData();
 };
 
 #endif // PROTOCOLDECODER_H

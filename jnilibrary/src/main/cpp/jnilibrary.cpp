@@ -42,7 +42,7 @@ static bool g_allDataReceived = false;
 MessageResponse waitForResponse() {
     std::unique_lock<std::mutex> lock(g_mutex);
     g_cv.wait(lock, [] { return g_allDataReceived; });
-    return ProtocolDecoder::decode();
+    return ProtocolDecoder::getInstance().decode();
 }
 
 
@@ -93,7 +93,7 @@ JNIEXPORT jbyteArray JNICALL
 Java_com_example_jnilibrary_NativeApi_getFeatures(JNIEnv *env, jclass clazz) {
 
     std::vector<unsigned char> emptyUCharVector;
-    std::vector<uint8_t> cmd = ProtocolEncoder::encodeProtocol(0, emptyUCharVector);
+    std::vector<uint8_t> cmd = ProtocolEncoder::getInstance().encodeProtocol(0, emptyUCharVector);
     sendDataToJava(env, cmd);
 
     // 等待 Java 层返回响应
@@ -124,7 +124,7 @@ Java_com_example_jnilibrary_NativeApi_sendDataToNative(JNIEnv *env, jclass clazz
     jint length = env->GetArrayLength(data);
     LOG_HEX("[C++] Received", reinterpret_cast<const uint8_t *>(bytes), length);
 
-    g_allDataReceived = ProtocolDecoder::packetCompletionCheck(
+    g_allDataReceived = ProtocolDecoder::getInstance().packetCompletionCheck(
             reinterpret_cast<const uint8_t *>(bytes), length);
     if (!g_allDataReceived) {
         return;

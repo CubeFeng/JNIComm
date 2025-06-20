@@ -3,6 +3,7 @@ package com.example.jnilibrary;
 import com.example.jnilibrary.MessageResponse;
 import com.example.jnilibrary.ProtocolConstants;
 
+import java.io.EOFException;
 import java.util.Arrays;
 
 import okio.Buffer;
@@ -15,12 +16,20 @@ import okio.Buffer;
  */
 public class ProtocolDecoder {
 
+    // 静态单例实例，在类加载时就创建
+    private static final ProtocolDecoder INSTANCE = new ProtocolDecoder();
+
     private static long msgDataLen = 0L;
     private static int messageType = 0;
 
     private static final Buffer buffer = new Buffer();
 
     private ProtocolDecoder() {
+    }
+
+    // 获取单例实例的静态方法
+    public static ProtocolDecoder getInstance() {
+        return INSTANCE;
     }
 
     /**
@@ -30,7 +39,7 @@ public class ProtocolDecoder {
      * @param chunk 待验证的字节数组数据块
      * @return 若为符合格式的首包数据返回 true，否则返回 false
      */
-    public static boolean isHeaderChunk(byte[] chunk) {
+    public boolean isHeaderChunk(byte[] chunk) {
         if (chunk == null || chunk.length < 9) {
             return false;
         }
@@ -51,7 +60,7 @@ public class ProtocolDecoder {
      * @param offset 解码起始偏移位置
      * @return 解码后的 16 位整数
      */
-    public static int decode16BE(byte[] src, int offset) {
+    public int decode16BE(byte[] src, int offset) {
         return (int) Byte.toUnsignedInt(src[offset + 1])
                 | (int) Byte.toUnsignedInt(src[offset + 0]) << 8;
     }
@@ -63,7 +72,7 @@ public class ProtocolDecoder {
      * @param offset 解码起始偏移位置
      * @return 解码后的 32 位长整数
      */
-    public static long decode32BE(byte[] src, int offset) {
+    public long decode32BE(byte[] src, int offset) {
         return (long) Byte.toUnsignedInt(src[offset + 3])
                 | (long) Byte.toUnsignedInt(src[offset + 2]) << 8
                 | (long) Byte.toUnsignedInt(src[offset + 1]) << 16
@@ -76,25 +85,23 @@ public class ProtocolDecoder {
      * @param value 接收到的字节数组数据
      * @return 若数据包接收完成返回 true，否则返回 false
      */
-    public static boolean packetCompletionCheck(byte[] value) {
+    public boolean packetCompletionCheck(byte[] value) {
         if (value == null) {
             return false;
         }
 
         int packetSize = value.length;
-        if (ProtocolDecoder.isHeaderChunk(value)) {
+        if (isHeaderChunk(value)) {
             // 新指令，清空 buffer
             clear();
-            // ?##<msg type><data len><data>
-            messageType = ProtocolDecoder.decode16BE(value, 3);
-            msgDataLen = ProtocolDecoder.decode32BE(value, 5);
+
+            msgDataLen = decode32BE(value, 5);
             // ?##<msg type><data len>
             msgDataLen += 1 + 2 + 2 + 4;
-            // 只要 payload
-            buffer.write(Arrays.copyOfRange(value, 9, packetSize));
-        } else {
-            buffer.write(Arrays.copyOfRange(value, 0, packetSize));
         }
+
+        // 缓存所有数据
+        buffer.write(Arrays.copyOfRange(value, 0, packetSize));
         msgDataLen -= packetSize;
 
         return msgDataLen <= 0;
@@ -105,13 +112,27 @@ public class ProtocolDecoder {
      *
      * @return 解码后的字节数组
      */
-    public static MessageResponse decode() {
-        // readByteArray() 会清空 buffer，所以只能调用一次
+    public MessageResponse decode() {
+        // ?##<msg type><data len><data>
+        messageType = decode16BE(buffer.snapshot().toByteArray(), 3);
+        try {
+            buffer.skip(9);
+        } catch (EOFException e) {
+            throw new RuntimeException(e);
+        }
         return new MessageResponse(messageType, buffer.snapshot().toByteArray());
-//        return new MessageResponse(messageType, buffer.readByteArray());
     }
 
-    private static void clear(){
+    /**
+     * 获取原始数据
+     *
+     * @return
+     */
+    public byte[] getRawData() {
+        return buffer.snapshot().toByteArray();
+    }
+
+    private void clear() {
         buffer.clear();
         msgDataLen = 0L;
         messageType = 0;

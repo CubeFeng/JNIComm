@@ -342,7 +342,7 @@ public class HyperMateAdapter {
                 return null;
             }
         }
-        return ProtocolDecoder.decode();
+        return ProtocolDecoder.getInstance().decode();
     }
 
 }

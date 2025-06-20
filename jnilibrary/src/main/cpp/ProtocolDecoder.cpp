@@ -2,11 +2,7 @@
 #include <algorithm>
 #include <iostream>
 
-long ProtocolDecoder::msgDataLen = 0L;
-int ProtocolDecoder::messageType = 0;
-std::vector<uint8_t> ProtocolDecoder::buffer;
-
-bool ProtocolDecoder::isHeaderChunk(const std::vector<uint8_t>& chunk) {
+bool ProtocolDecoder::isHeaderChunk(const std::vector<uint8_t> &chunk) {
     if (chunk.size() < 9) {
         return false;
     }
@@ -20,19 +16,19 @@ bool ProtocolDecoder::isHeaderChunk(const std::vector<uint8_t>& chunk) {
            sharp2 == ProtocolConstants::MESSAGE_HEADER_BYTE;
 }
 
-int ProtocolDecoder::decode16BE(const std::vector<uint8_t>& src, int offset) {
+int ProtocolDecoder::decode16BE(const std::vector<uint8_t> &src, int offset) {
     return (static_cast<int>(src[offset + 1]) & 0xFF) |
            ((static_cast<int>(src[offset + 0]) & 0xFF) << 8);
 }
 
-long ProtocolDecoder::decode32BE(const std::vector<uint8_t>& src, int offset) {
+long ProtocolDecoder::decode32BE(const std::vector<uint8_t> &src, int offset) {
     return (static_cast<long>(src[offset + 3]) & 0xFFL) |
            ((static_cast<long>(src[offset + 2]) & 0xFFL) << 8) |
            ((static_cast<long>(src[offset + 1]) & 0xFFL) << 16) |
            ((static_cast<long>(src[offset + 0]) & 0xFFL) << 24);
 }
 
-bool ProtocolDecoder::packetCompletionCheck(const uint8_t* value, size_t length) {
+bool ProtocolDecoder::packetCompletionCheck(const uint8_t *value, size_t length) {
     if (value == nullptr || length == 0) {
         return false;
     }
@@ -43,23 +39,27 @@ bool ProtocolDecoder::packetCompletionCheck(const uint8_t* value, size_t length)
     if (ProtocolDecoder::isHeaderChunk(chunk)) {
         // 新指令，清空 buffer
         clear();
-        // ?##<msg type><data len><data>
-        messageType = ProtocolDecoder::decode16BE(chunk, 3);
         msgDataLen = ProtocolDecoder::decode32BE(chunk, 5);
         // ?##<msg type><data len>
         msgDataLen += 1 + 2 + 2 + 4;
-        // 只要 payload
-        buffer.insert(buffer.end(), value + 9, value + length);
-    } else {
-        buffer.insert(buffer.end(), value, value + length);
     }
+    // 缓存所有数据
+    buffer.insert(buffer.end(), value, value + length);
     msgDataLen -= packetSize;
 
     return msgDataLen <= 0;
 }
 
 MessageResponse ProtocolDecoder::decode() {
-    return MessageResponse(messageType, buffer);
+    // ?##<msg type><data len><data>
+    messageType = ProtocolDecoder::decode16BE(buffer, 3);
+    // data 域
+    std::vector<uint8_t> data(buffer.begin() + 9, buffer.end());
+    return MessageResponse(messageType, data);
+}
+
+std::vector<uint8_t> ProtocolDecoder::getRawData() {
+    return buffer;
 }
 
 void ProtocolDecoder::clear() {
